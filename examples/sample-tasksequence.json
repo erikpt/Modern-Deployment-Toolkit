@@ -1,0 +1,67 @@
+{
+  "id": "ts-002",
+  "name": "Windows Server 2022 Deployment",
+  "description": "Deploy Windows Server 2022 with server roles",
+  "version": "1.0.0",
+  "variables": [
+    {
+      "name": "OSVersion",
+      "value": "WindowsServer2022",
+      "isReadOnly": false,
+      "isSecret": false
+    },
+    {
+      "name": "ServerRole",
+      "value": "WebServer",
+      "isReadOnly": false,
+      "isSecret": false
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-001",
+      "name": "Apply FFU Image",
+      "description": "Deploy Windows Server 2022 using FFU",
+      "type": "ApplyFFUImage",
+      "enabled": true,
+      "continueOnError": false,
+      "properties": {
+        "FfuPath": "\\\\server\\images\\Server2022.ffu",
+        "TargetDisk": "0"
+      },
+      "conditions": []
+    },
+    {
+      "id": "step-002",
+      "name": "Install Server Roles",
+      "description": "Configure server roles",
+      "type": "RunPowerShell",
+      "enabled": true,
+      "continueOnError": false,
+      "properties": {
+        "Script": "Install-WindowsFeature -Name Web-Server -IncludeManagementTools"
+      },
+      "conditions": [
+        {
+          "variableName": "ServerRole",
+          "operator": "Equals",
+          "value": "WebServer"
+        }
+      ]
+    },
+    {
+      "id": "step-003",
+      "name": "Run Custom Configuration",
+      "description": "Execute custom configuration script",
+      "type": "RunCommandLine",
+      "enabled": true,
+      "continueOnError": false,
+      "properties": {
+        "CommandLine": "powershell.exe -ExecutionPolicy Bypass -File config.ps1",
+        "WorkingDirectory": "C:\\Deploy",
+        "TimeoutMinutes": "30"
+      },
+      "conditions": []
+    }
+  ]
+}
