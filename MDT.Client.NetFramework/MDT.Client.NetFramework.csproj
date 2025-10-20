@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="3.5" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>9.0.30729</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{A8B4C5D6-E7F8-9012-3456-789ABCDEF012}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>MDT.Client.NetFramework</RootNamespace>
+    <AssemblyName>MDT.Client</AssemblyName>
+    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Web" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Core\Models\TaskSequence.cs" />
+    <Compile Include="Core\Models\TaskSequenceStep.cs" />
+    <Compile Include="Core\Models\TaskSequenceVariable.cs" />
+    <Compile Include="Core\Models\ExecutionContext.cs" />
+    <Compile Include="Core\Interfaces\IStepExecutor.cs" />
+    <Compile Include="Core\Interfaces\ITaskSequenceParser.cs" />
+    <Compile Include="Core\Interfaces\IServerClient.cs" />
+    <Compile Include="Core\Services\VariableManager.cs" />
+    <Compile Include="Core\Services\ConditionEvaluator.cs" />
+    <Compile Include="Parsers\MdtXmlParser.cs" />
+    <Compile Include="Engine\TaskSequenceEngine.cs" />
+    <Compile Include="StepExecutors\BaseStepExecutor.cs" />
+    <Compile Include="StepExecutors\RunCommandLineExecutor.cs" />
+    <Compile Include="StepExecutors\SetVariableExecutor.cs" />
+    <Compile Include="StepExecutors\BddValidateExecutor.cs" />
+    <Compile Include="StepExecutors\CheckBiosExecutor.cs" />
+    <Compile Include="StepExecutors\PartitionDiskExecutor.cs" />
+    <Compile Include="StepExecutors\ConfigureExecutor.cs" />
+    <Compile Include="StepExecutors\BddInstallOsExecutor.cs" />
+    <Compile Include="StepExecutors\ZtiWinReExecutor.cs" />
+    <Compile Include="StepExecutors\RunPowerShellExecutor.cs" />
+    <Compile Include="StepExecutors\RebootExecutor.cs" />
+    <Compile Include="ApiClient\MdtServerClient.cs" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
