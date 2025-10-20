@@ -1,0 +1,45 @@
+id: ts-003
+name: Linux Migration to Windows
+description: Capture user state from Linux and deploy Windows
+version: 1.0.0
+variables:
+  - name: SourceOS
+    value: Linux
+    isReadOnly: false
+    isSecret: false
+  - name: TargetOS
+    value: Windows11
+    isReadOnly: false
+    isSecret: false
+steps:
+  - id: step-001
+    name: Capture User State
+    description: Capture user files and settings
+    type: CaptureUserState
+    enabled: true
+    continueOnError: false
+    properties:
+      StorePath: \\server\usmt\%COMPUTERNAME%
+      IncludeFiles: "true"
+      IncludeSettings: "true"
+    conditions: []
+  - id: step-002
+    name: Apply Windows Image
+    description: Deploy Windows 11
+    type: ApplyWindowsImage
+    enabled: true
+    continueOnError: false
+    properties:
+      WimPath: \\server\images\Windows11.wim
+      ImageIndex: "1"
+      TargetDrive: C:
+    conditions: []
+  - id: step-003
+    name: Restore User State
+    description: Restore captured user data
+    type: RestoreUserState
+    enabled: true
+    continueOnError: false
+    properties:
+      StorePath: \\server\usmt\%COMPUTERNAME%
+    conditions: []

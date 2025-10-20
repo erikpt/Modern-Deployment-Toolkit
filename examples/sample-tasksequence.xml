@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TaskSequence id="ts-001" name="Windows 11 Deployment" version="1.0.0">
+    <description>Deploy Windows 11 Enterprise with applications and drivers</description>
+    <variables>
+        <variable name="OSVersion" value="Windows11" readonly="false" secret="false" />
+        <variable name="TargetDrive" value="C:" readonly="false" secret="false" />
+        <variable name="DeploymentShare" value="\\server\share" readonly="false" secret="false" />
+    </variables>
+    <steps>
+        <step id="step-001" name="Format and Partition Disk" type="FormatAndPartition" enabled="true" continueOnError="false">
+            <description>Prepare disk for OS deployment</description>
+            <properties>
+                <DiskNumber>0</DiskNumber>
+                <PartitionStyle>GPT</PartitionStyle>
+            </properties>
+        </step>
+        <step id="step-002" name="Apply Windows Image" type="ApplyWindowsImage" enabled="true" continueOnError="false">
+            <description>Deploy Windows 11 Enterprise image</description>
+            <properties>
+                <WimPath>\\server\images\Windows11.wim</WimPath>
+                <ImageIndex>1</ImageIndex>
+                <TargetDrive>C:</TargetDrive>
+            </properties>
+        </step>
+        <step id="step-003" name="Install Drivers" type="InstallDriver" enabled="true" continueOnError="false">
+            <description>Install hardware drivers</description>
+            <properties>
+                <DriverPath>\\server\drivers</DriverPath>
+                <Recursive>true</Recursive>
+            </properties>
+        </step>
+        <step id="step-004" name="Application Installation Group" type="Group" enabled="true" continueOnError="false">
+            <description>Install business applications</description>
+            <steps>
+                <step id="step-005" name="Install Office 365" type="InstallApplication" enabled="true" continueOnError="false">
+                    <properties>
+                        <ApplicationName>Microsoft Office 365</ApplicationName>
+                        <CommandLine>setup.exe /configure config.xml</CommandLine>
+                        <WorkingDirectory>\\server\apps\Office365</WorkingDirectory>
+                    </properties>
+                </step>
+                <step id="step-006" name="Install Chrome" type="InstallApplication" enabled="true" continueOnError="true">
+                    <properties>
+                        <ApplicationName>Google Chrome</ApplicationName>
+                        <CommandLine>ChromeSetup.exe /silent /install</CommandLine>
+                        <WorkingDirectory>\\server\apps\Chrome</WorkingDirectory>
+                    </properties>
+                </step>
+            </steps>
+        </step>
+        <step id="step-007" name="Restore User State" type="RestoreUserState" enabled="true" continueOnError="false">
+            <description>Restore user files and settings</description>
+            <properties>
+                <StorePath>\\server\usmt\%COMPUTERNAME%</StorePath>
+            </properties>
+            <conditions>
+                <condition variable="MigrateUserData" operator="Equals" value="True" />
+            </conditions>
+        </step>
+        <step id="step-008" name="Set Deployment Complete" type="SetVariable" enabled="true" continueOnError="false">
+            <properties>
+                <VariableName>DeploymentComplete</VariableName>
+                <VariableValue>True</VariableValue>
+            </properties>
+        </step>
+    </steps>
+</TaskSequence>

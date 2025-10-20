@@ -1,0 +1,6 @@
+@MDT.WebUI_HostAddress = http://localhost:5082
+
+GET {{MDT.WebUI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
