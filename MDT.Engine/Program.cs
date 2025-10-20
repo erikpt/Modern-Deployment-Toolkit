@@ -33,6 +33,7 @@ services.AddTransient<IStepExecutor, InstallDriverExecutor>();
 services.AddTransient<IStepExecutor, CaptureUserStateExecutor>();
 services.AddTransient<IStepExecutor, RestoreUserStateExecutor>();
 services.AddTransient<IStepExecutor, RunCommandLineExecutor>();
+services.AddTransient<IStepExecutor, RunPowerShellExecutor>();
 services.AddTransient<IStepExecutor, SetVariableExecutor>();
 services.AddTransient<IStepExecutor, FormatAndPartitionExecutor>();
 services.AddTransient<IStepExecutor, RestartComputerExecutor>();
