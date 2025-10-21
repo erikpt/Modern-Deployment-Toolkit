@@ -119,6 +119,13 @@ namespace MDT.Client.NetFramework.Parsers
             step.Description = GetAttributeValue(stepNode, "description") ?? string.Empty;
             step.Type = GetAttributeValue(stepNode, "type") ?? stepNode.Name;
             
+            // Parse action element
+            XmlNode actionNode = stepNode.SelectSingleNode("action");
+            if (actionNode != null)
+            {
+                step.Action = actionNode.InnerText ?? string.Empty;
+            }
+            
             // Parse disable flag
             string disable = GetAttributeValue(stepNode, "disable");
             step.Enabled = !string.Equals(disable, "true", StringComparison.OrdinalIgnoreCase);
