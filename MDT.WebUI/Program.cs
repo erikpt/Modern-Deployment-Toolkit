@@ -32,6 +32,7 @@ else
 
 builder.Services.AddSingleton<IVariableManager, VariableManager>();
 builder.Services.AddSingleton<IConditionEvaluator, ConditionEvaluator>();
+builder.Services.AddSingleton<StepTypeMetadataService>();
 
 builder.Services.AddTransient<ITaskSequenceParser, XmlTaskSequenceParser>();
 builder.Services.AddTransient<ITaskSequenceParser, JsonTaskSequenceParser>();

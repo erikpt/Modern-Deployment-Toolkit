@@ -26,6 +26,7 @@
     <ProjectReference Include="..\MDT.TaskSequence\MDT.TaskSequence.csproj" />
     <ProjectReference Include="..\MDT.Plugins\MDT.Plugins.csproj" />
     <ProjectReference Include="..\MDT.Engine\MDT.Engine.csproj" />
+    <ProjectReference Include="..\MDT.WebUI\MDT.WebUI.csproj" />
   </ItemGroup>
 
 </Project>
