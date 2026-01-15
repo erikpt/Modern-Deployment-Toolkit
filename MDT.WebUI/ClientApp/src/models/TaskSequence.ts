@@ -49,6 +49,12 @@ export interface TaskSequenceVariable {
   isSecret: boolean;
 }
 
+export enum TaskSequenceStatus {
+  Development = 'Development',
+  Testing = 'Testing',
+  Production = 'Production'
+}
+
 export interface TaskSequence {
   id: string;
   name: string;

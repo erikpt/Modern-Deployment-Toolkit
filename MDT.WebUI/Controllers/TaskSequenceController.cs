@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using MDT.Core.Interfaces;
 using MDT.Core.Models;
 using MDT.Core.Services;
+using MDT.Core.Data;
 using MDT.TaskSequence.Parsers;
 using MDT.TaskSequence.Executors;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 
 namespace MDT.WebUI.Controllers;
 
@@ -16,18 +18,20 @@ public class TaskSequenceController : ControllerBase
     private readonly TaskSequenceEngine _engine;
     private readonly IEnumerable<ITaskSequenceParser> _parsers;
     private readonly StepTypeMetadataService _stepTypeMetadataService;
-    private static readonly Dictionary<string, Core.Models.TaskSequence> _taskSequenceStore = new();
+    private readonly MdtDbContext _dbContext;
 
     public TaskSequenceController(
         ILogger<TaskSequenceController> logger,
         TaskSequenceEngine engine,
         IEnumerable<ITaskSequenceParser> parsers,
-        StepTypeMetadataService stepTypeMetadataService)
+        StepTypeMetadataService stepTypeMetadataService,
+        MdtDbContext dbContext)
     {
         _logger = logger;
         _engine = engine;
         _parsers = parsers;
         _stepTypeMetadataService = stepTypeMetadataService;
+        _dbContext = dbContext;
     }
 
     [HttpPost("parse")]
@@ -196,19 +200,66 @@ public class TaskSequenceController : ControllerBase
     }
 
     [HttpPost("save")]
-    public IActionResult SaveTaskSequence([FromBody] Core.Models.TaskSequence taskSequence)
+    public async Task<IActionResult> SaveTaskSequence([FromBody] Core.Models.TaskSequence taskSequence, [FromQuery] string status = "Development")
     {
         try
         {
-            if (string.IsNullOrEmpty(taskSequence.Id))
+            // Validate status
+            if (!Enum.TryParse<TaskSequenceStatus>(status, true, out var parsedStatus))
+            {
+                return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+            }
+
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var isNew = string.IsNullOrEmpty(taskSequence.Id);
+            if (isNew)
             {
                 taskSequence.Id = Guid.NewGuid().ToString();
+                taskSequence.CreatedDate = DateTime.UtcNow;
             }
 
             taskSequence.ModifiedDate = DateTime.UtcNow;
-            _taskSequenceStore[taskSequence.Id] = taskSequence;
 
-            return Ok(new { Id = taskSequence.Id, Message = "Task sequence saved successfully" });
+            var content = yamlParser.Serialize(taskSequence);
+
+            var entity = await _dbContext.TaskSequences.FindAsync(taskSequence.Id);
+            if (entity != null)
+            {
+                entity.Name = taskSequence.Name;
+                entity.Description = taskSequence.Description;
+                entity.Version = taskSequence.Version;
+                entity.Content = content;
+                entity.Status = status;
+                entity.ModifiedDate = taskSequence.ModifiedDate;
+            }
+            else
+            {
+                entity = new TaskSequenceEntity
+                {
+                    Id = taskSequence.Id,
+                    Name = taskSequence.Name,
+                    Description = taskSequence.Description,
+                    Version = taskSequence.Version,
+                    Content = content,
+                    Status = status,
+                    CreatedDate = taskSequence.CreatedDate,
+                    ModifiedDate = taskSequence.ModifiedDate
+                };
+                _dbContext.TaskSequences.Add(entity);
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { 
+                Id = taskSequence.Id, 
+                Status = status,
+                Message = $"Task sequence saved successfully to {status}" 
+            });
         }
         catch (Exception ex)
         {
@@ -217,17 +268,78 @@ public class TaskSequenceController : ControllerBase
         }
     }
 
-    [HttpGet("load/{id}")]
-    public IActionResult LoadTaskSequence(string id)
+    [HttpPost("commit")]
+    public async Task<IActionResult> CommitTaskSequence([FromBody] CommitRequest request)
     {
         try
         {
-            if (_taskSequenceStore.TryGetValue(id, out var taskSequence))
+            if (string.IsNullOrEmpty(request.Id))
             {
-                return Ok(taskSequence);
+                return BadRequest("Task sequence ID is required");
             }
 
-            return NotFound($"Task sequence with ID '{id}' not found");
+            // Validate status
+            if (!Enum.TryParse<TaskSequenceStatus>(request.Status, true, out var parsedStatus))
+            {
+                return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+            }
+
+            var entity = await _dbContext.TaskSequences.FindAsync(request.Id);
+            if (entity == null)
+            {
+                return NotFound($"Task sequence with ID '{request.Id}' not found");
+            }
+
+            // Validate promotion path: Development -> Testing -> Production
+            var currentStatus = Enum.Parse<TaskSequenceStatus>(entity.Status, true);
+            if (parsedStatus < currentStatus)
+            {
+                return BadRequest($"Cannot demote task sequence from {entity.Status} to {request.Status}");
+            }
+
+            entity.Status = request.Status;
+            entity.ModifiedDate = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { 
+                Id = entity.Id,
+                PreviousStatus = currentStatus.ToString(),
+                NewStatus = request.Status,
+                Message = $"Task sequence committed to {request.Status}" 
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to commit task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("load/{id}")]
+    public async Task<IActionResult> LoadTaskSequence(string id)
+    {
+        try
+        {
+            var entity = await _dbContext.TaskSequences.FindAsync(id);
+            if (entity == null)
+            {
+                return NotFound($"Task sequence with ID '{id}' not found");
+            }
+
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var taskSequence = yamlParser.Parse(entity.Content);
+            
+            return Ok(new
+            {
+                TaskSequence = taskSequence,
+                Status = entity.Status
+            });
         }
         catch (Exception ex)
         {
@@ -237,18 +349,34 @@ public class TaskSequenceController : ControllerBase
     }
 
     [HttpGet("list")]
-    public IActionResult ListTaskSequences()
+    public async Task<IActionResult> ListTaskSequences([FromQuery] string? status = null)
     {
         try
         {
-            var taskSequences = _taskSequenceStore.Values.Select(ts => new
+            var query = _dbContext.TaskSequences.AsQueryable();
+
+            if (!string.IsNullOrEmpty(status))
             {
-                ts.Id,
-                ts.Name,
-                ts.Description,
-                ts.Version,
-                ts.ModifiedDate
-            });
+                if (!Enum.TryParse<TaskSequenceStatus>(status, true, out _))
+                {
+                    return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+                }
+                query = query.Where(ts => ts.Status == status);
+            }
+
+            var taskSequences = await query
+                .OrderByDescending(ts => ts.ModifiedDate)
+                .Select(ts => new
+                {
+                    ts.Id,
+                    ts.Name,
+                    ts.Description,
+                    ts.Version,
+                    ts.Status,
+                    ts.CreatedDate,
+                    ts.ModifiedDate
+                })
+                .ToListAsync();
 
             return Ok(taskSequences);
         }
@@ -263,4 +391,10 @@ public class TaskSequenceController : ControllerBase
 public class ParseRequest
 {
     public string Content { get; set; } = string.Empty;
+}
+
+public class CommitRequest
+{
+    public string Id { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
 }

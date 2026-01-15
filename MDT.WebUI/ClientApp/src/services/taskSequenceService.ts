@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { TaskSequence, StepTypeMetadata } from '../models/TaskSequence';
+import { TaskSequence, StepTypeMetadata, TaskSequenceStatus } from '../models/TaskSequence';
 
 const api = axios.create({
   baseURL: '/api',
@@ -42,27 +42,36 @@ export const taskSequenceService = {
     return response.data;
   },
 
-  // Save a task sequence
-  async saveTaskSequence(taskSequence: TaskSequence): Promise<{ id: string; message: string }> {
-    const response = await api.post('/tasksequence/save', taskSequence);
+  // Save a task sequence with status
+  async saveTaskSequence(taskSequence: TaskSequence, status: TaskSequenceStatus = TaskSequenceStatus.Development): Promise<{ id: string; status: string; message: string }> {
+    const response = await api.post(`/tasksequence/save?status=${status}`, taskSequence);
+    return response.data;
+  },
+
+  // Commit a task sequence to a new status (promote)
+  async commitTaskSequence(id: string, status: TaskSequenceStatus): Promise<{ id: string; previousStatus: string; newStatus: string; message: string }> {
+    const response = await api.post('/tasksequence/commit', { id, status });
     return response.data;
   },
 
   // Load a task sequence by ID
-  async loadTaskSequence(id: string): Promise<TaskSequence> {
-    const response = await api.get<TaskSequence>(`/tasksequence/load/${id}`);
+  async loadTaskSequence(id: string): Promise<{ taskSequence: TaskSequence; status: string }> {
+    const response = await api.get<{ taskSequence: TaskSequence; status: string }>(`/tasksequence/load/${id}`);
     return response.data;
   },
 
-  // List all saved task sequences
-  async listTaskSequences(): Promise<Array<{
+  // List all saved task sequences with optional status filter
+  async listTaskSequences(status?: TaskSequenceStatus): Promise<Array<{
     id: string;
     name: string;
     description: string;
     version: string;
+    status: string;
+    createdDate: string;
     modifiedDate: string;
   }>> {
-    const response = await api.get('/tasksequence/list');
+    const url = status ? `/tasksequence/list?status=${status}` : '/tasksequence/list';
+    const response = await api.get(url);
     return response.data;
   }
 };

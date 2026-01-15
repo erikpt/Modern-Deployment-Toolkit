@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TaskSequence, TaskSequenceStep, StepType, StepTypeMetadata } from '../../models/TaskSequence';
+import { TaskSequence, TaskSequenceStep, StepType, StepTypeMetadata, TaskSequenceStatus } from '../../models/TaskSequence';
 import { taskSequenceService } from '../../services/taskSequenceService';
 import Toolbar from './Toolbar';
 import StepLibrary from './StepLibrary';
@@ -22,6 +22,7 @@ const TaskSequenceEditor: React.FC = () => {
 
   const [stepTypes, setStepTypes] = useState<StepTypeMetadata[]>([]);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [currentStatus, setCurrentStatus] = useState<TaskSequenceStatus>(TaskSequenceStatus.Development);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ const TaskSequenceEditor: React.FC = () => {
     try {
       const imported = await taskSequenceService.importTaskSequence(file);
       setTaskSequence(imported);
+      setCurrentStatus(TaskSequenceStatus.Development); // Reset to Development on import
       setSelectedStepId(null);
       showMessage('success', `Imported task sequence: ${imported.name}`);
     } catch (error: any) {
@@ -89,11 +91,28 @@ const TaskSequenceEditor: React.FC = () => {
 
   const handleSave = async () => {
     try {
-      const result = await taskSequenceService.saveTaskSequence(taskSequence);
+      const result = await taskSequenceService.saveTaskSequence(taskSequence, currentStatus);
       setTaskSequence({ ...taskSequence, id: result.id, modifiedDate: new Date().toISOString() });
+      setCurrentStatus(result.status as TaskSequenceStatus);
       showMessage('success', result.message);
     } catch (error: any) {
       showMessage('error', `Save failed: ${error.response?.data || error.message}`);
+    }
+  };
+
+  const handleCommit = async (newStatus: TaskSequenceStatus) => {
+    if (!taskSequence.id) {
+      showMessage('error', 'Please save the task sequence before committing');
+      return;
+    }
+
+    try {
+      const result = await taskSequenceService.commitTaskSequence(taskSequence.id, newStatus);
+      setCurrentStatus(result.newStatus as TaskSequenceStatus);
+      setTaskSequence({ ...taskSequence, modifiedDate: new Date().toISOString() });
+      showMessage('success', result.message);
+    } catch (error: any) {
+      showMessage('error', `Commit failed: ${error.response?.data || error.message}`);
     }
   };
 
@@ -265,7 +284,10 @@ const TaskSequenceEditor: React.FC = () => {
         onExport={handleExport}
         onSave={handleSave}
         onValidate={handleValidate}
+        onCommit={handleCommit}
+        currentStatus={currentStatus}
         canSave={canSave}
+        hasId={!!taskSequence.id}
       />
 
       <div className="editor-content">
