@@ -62,6 +62,12 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add SPA services
+builder.Services.AddSpaStaticFiles(configuration =>
+{
+    configuration.RootPath = "wwwroot";
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -78,7 +84,22 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors();
+
+app.UseStaticFiles();
+app.UseSpaStaticFiles();
+
 app.UseAuthorization();
 app.MapControllers();
+
+// Serve the React SPA
+app.UseSpa(spa =>
+{
+    spa.Options.SourcePath = "ClientApp";
+    
+    if (app.Environment.IsDevelopment())
+    {
+        spa.UseProxyToSpaDevelopmentServer("http://localhost:3000");
+    }
+});
 
 app.Run();
