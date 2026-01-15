@@ -447,8 +447,9 @@ public class TaskSequenceController : ControllerBase
             }
 
             // Get the highest version number for this base task sequence
+            var baseIdForQuery = string.IsNullOrEmpty(baseEntity.BaseTaskSequenceId) ? baseEntity.Id : baseEntity.BaseTaskSequenceId;
             var maxVersionNumber = await _dbContext.TaskSequences
-                .Where(ts => ts.BaseTaskSequenceId == baseEntity.BaseTaskSequenceId || ts.Id == request.BaseTaskSequenceId)
+                .Where(ts => (ts.BaseTaskSequenceId == baseIdForQuery && !string.IsNullOrEmpty(ts.BaseTaskSequenceId)) || ts.Id == request.BaseTaskSequenceId)
                 .MaxAsync(ts => (int?)ts.VersionNumber) ?? baseEntity.VersionNumber;
 
             var newVersionNumber = maxVersionNumber + 1;
@@ -592,7 +593,8 @@ public class TaskSequenceController : ControllerBase
         // Simple version increment logic (e.g., 1.0.0 -> 1.1.0)
         if (Version.TryParse(version, out var v))
         {
-            return $"{v.Major}.{v.Minor + 1}.{v.Build}";
+            var build = v.Build >= 0 ? v.Build : 0;
+            return $"{v.Major}.{v.Minor + 1}.{build}";
         }
         return version;
     }

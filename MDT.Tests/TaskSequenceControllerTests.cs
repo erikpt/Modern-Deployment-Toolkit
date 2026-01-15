@@ -430,8 +430,11 @@ steps:
         var save1Result = await _controller.SaveTaskSequence(ts1, "Development");
         var save1OkResult = Assert.IsType<OkObjectResult>(save1Result);
         var save1Value = save1OkResult.Value;
-        var id1Property = save1Value!.GetType().GetProperty("Id");
-        var id1 = id1Property!.GetValue(save1Value)?.ToString()!;
+        Assert.NotNull(save1Value);
+        var id1Property = save1Value.GetType().GetProperty("Id");
+        Assert.NotNull(id1Property);
+        var id1 = id1Property.GetValue(save1Value)?.ToString();
+        Assert.NotNull(id1);
 
         await _controller.CommitTaskSequence(new CommitRequest { Id = id1, Status = "Production" });
 
@@ -439,8 +442,11 @@ steps:
         var createResult = await _controller.CreateNewVersion(new CreateVersionRequest { BaseTaskSequenceId = id1 });
         var createOkResult = Assert.IsType<OkObjectResult>(createResult);
         var createValue = createOkResult.Value;
-        var id2Property = createValue!.GetType().GetProperty("Id");
-        var id2 = id2Property!.GetValue(createValue)?.ToString()!;
+        Assert.NotNull(createValue);
+        var id2Property = createValue.GetType().GetProperty("Id");
+        Assert.NotNull(id2Property);
+        var id2 = id2Property.GetValue(createValue)?.ToString();
+        Assert.NotNull(id2);
 
         await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Testing" });
         await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Production" });
@@ -466,15 +472,25 @@ steps:
             Steps = new List<TaskSequenceStep> { new TaskSequenceStep { Name = "Step", Type = StepType.SetVariable } }
         };
         var save1Result = await _controller.SaveTaskSequence(ts1, "Development");
-        var save1Value = save1Result as OkObjectResult;
-        var id1 = save1Value!.Value!.GetType().GetProperty("Id")!.GetValue(save1Value.Value)?.ToString()!;
+        var save1OkResult = Assert.IsType<OkObjectResult>(save1Result);
+        var save1Value = save1OkResult.Value;
+        Assert.NotNull(save1Value);
+        var id1Property = save1Value.GetType().GetProperty("Id");
+        Assert.NotNull(id1Property);
+        var id1 = id1Property.GetValue(save1Value)?.ToString();
+        Assert.NotNull(id1);
 
         await _controller.CommitTaskSequence(new CommitRequest { Id = id1, Status = "Production" });
 
         // Create and promote second version
         var createResult = await _controller.CreateNewVersion(new CreateVersionRequest { BaseTaskSequenceId = id1 });
-        var createValue = createResult as OkObjectResult;
-        var id2 = createValue!.Value!.GetType().GetProperty("Id")!.GetValue(createValue.Value)?.ToString()!;
+        var createOkResult = Assert.IsType<OkObjectResult>(createResult);
+        var createValue = createOkResult.Value;
+        Assert.NotNull(createValue);
+        var id2Property = createValue.GetType().GetProperty("Id");
+        Assert.NotNull(id2Property);
+        var id2 = id2Property.GetValue(createValue)?.ToString();
+        Assert.NotNull(id2);
 
         await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Testing" });
         await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Production" });
