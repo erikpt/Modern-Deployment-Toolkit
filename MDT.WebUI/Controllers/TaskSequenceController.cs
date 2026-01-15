@@ -34,6 +34,17 @@ public class TaskSequenceController : ControllerBase
         _dbContext = dbContext;
     }
 
+    private bool ValidateStatus(string status, out TaskSequenceStatus parsedStatus, out string errorMessage)
+    {
+        if (!Enum.TryParse<TaskSequenceStatus>(status, true, out parsedStatus))
+        {
+            errorMessage = $"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}";
+            return false;
+        }
+        errorMessage = string.Empty;
+        return true;
+    }
+
     [HttpPost("parse")]
     public IActionResult ParseTaskSequence([FromBody] ParseRequest request)
     {
@@ -205,9 +216,9 @@ public class TaskSequenceController : ControllerBase
         try
         {
             // Validate status
-            if (!Enum.TryParse<TaskSequenceStatus>(status, true, out var parsedStatus))
+            if (!ValidateStatus(status, out var parsedStatus, out var errorMessage))
             {
-                return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+                return BadRequest(errorMessage);
             }
 
             var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
@@ -279,9 +290,9 @@ public class TaskSequenceController : ControllerBase
             }
 
             // Validate status
-            if (!Enum.TryParse<TaskSequenceStatus>(request.Status, true, out var parsedStatus))
+            if (!ValidateStatus(request.Status, out var parsedStatus, out var errorMessage))
             {
-                return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+                return BadRequest(errorMessage);
             }
 
             var entity = await _dbContext.TaskSequences.FindAsync(request.Id);
@@ -291,7 +302,11 @@ public class TaskSequenceController : ControllerBase
             }
 
             // Validate promotion path: Development -> Testing -> Production
-            var currentStatus = Enum.Parse<TaskSequenceStatus>(entity.Status, true);
+            if (!Enum.TryParse<TaskSequenceStatus>(entity.Status, true, out var currentStatus))
+            {
+                currentStatus = TaskSequenceStatus.Development; // Default to Development if invalid
+            }
+
             if (parsedStatus < currentStatus)
             {
                 return BadRequest($"Cannot demote task sequence from {entity.Status} to {request.Status}");
@@ -357,9 +372,9 @@ public class TaskSequenceController : ControllerBase
 
             if (!string.IsNullOrEmpty(status))
             {
-                if (!Enum.TryParse<TaskSequenceStatus>(status, true, out _))
+                if (!ValidateStatus(status, out _, out var errorMessage))
                 {
-                    return BadRequest($"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}");
+                    return BadRequest(errorMessage);
                 }
                 query = query.Where(ts => ts.Status == status);
             }
@@ -395,6 +410,9 @@ public class ParseRequest
 
 public class CommitRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
     public string Id { get; set; } = string.Empty;
+    
+    [System.ComponentModel.DataAnnotations.Required]
     public string Status { get; set; } = string.Empty;
 }

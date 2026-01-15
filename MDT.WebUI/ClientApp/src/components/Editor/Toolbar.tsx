@@ -15,6 +15,12 @@ interface ToolbarProps {
   hasId: boolean;
 }
 
+const STATUS_ORDER = [
+  TaskSequenceStatus.Development,
+  TaskSequenceStatus.Testing,
+  TaskSequenceStatus.Production
+];
+
 const Toolbar: React.FC<ToolbarProps> = ({
   onNew,
   onImport,
@@ -42,14 +48,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
   const canPromoteTo = (status: TaskSequenceStatus) => {
     if (!hasId) return false;
     
-    const statusOrder = [
-      TaskSequenceStatus.Development,
-      TaskSequenceStatus.Testing,
-      TaskSequenceStatus.Production
-    ];
-    
-    const currentIndex = statusOrder.indexOf(currentStatus);
-    const targetIndex = statusOrder.indexOf(status);
+    const currentIndex = STATUS_ORDER.indexOf(currentStatus);
+    const targetIndex = STATUS_ORDER.indexOf(status);
     
     return targetIndex > currentIndex;
   };
