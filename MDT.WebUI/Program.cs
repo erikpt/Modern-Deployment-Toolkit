@@ -96,7 +96,10 @@ app.UseSpa(spa =>
 {
     spa.Options.SourcePath = "ClientApp";
     
-    if (app.Environment.IsDevelopment())
+    // Only proxy in development if explicitly requested
+    // To use: set environment variable USE_SPA_PROXY=true and run npm run dev in ClientApp
+    if (app.Environment.IsDevelopment() && 
+        builder.Configuration.GetValue<bool>("UseSpaProxy", false))
     {
         spa.UseProxyToSpaDevelopmentServer("http://localhost:3000");
     }
