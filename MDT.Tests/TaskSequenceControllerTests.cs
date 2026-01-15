@@ -351,4 +351,145 @@ steps:
         Assert.NotNull(sequences);
         Assert.Single(sequences);
     }
+
+    [Fact]
+    public async Task CreateNewVersion_ShouldCreateVersionWithIncrementedNumber()
+    {
+        // Create base task sequence
+        var taskSequence = new Core.Models.TaskSequence
+        {
+            Name = "Base Sequence",
+            Version = "1.0.0",
+            Steps = new List<TaskSequenceStep> { new TaskSequenceStep { Name = "Step", Type = StepType.SetVariable } }
+        };
+        var saveResult = await _controller.SaveTaskSequence(taskSequence, "Production");
+        var saveOkResult = Assert.IsType<OkObjectResult>(saveResult);
+        var saveValue = saveOkResult.Value;
+        Assert.NotNull(saveValue);
+        
+        var idProperty = saveValue.GetType().GetProperty("Id");
+        Assert.NotNull(idProperty);
+        var baseId = idProperty.GetValue(saveValue)?.ToString();
+        Assert.NotNull(baseId);
+
+        // Create new version
+        var createRequest = new CreateVersionRequest
+        {
+            BaseTaskSequenceId = baseId
+        };
+        
+        var result = await _controller.CreateNewVersion(createRequest);
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var value = okResult.Value;
+        Assert.NotNull(value);
+
+        // Verify new version has incremented version number
+        var versionNumProperty = value.GetType().GetProperty("VersionNumber");
+        Assert.NotNull(versionNumProperty);
+        var versionNumber = (int?)versionNumProperty.GetValue(value);
+        Assert.Equal(2, versionNumber);
+    }
+
+    [Fact]
+    public async Task GetVersions_ShouldReturnAllVersions()
+    {
+        // Create base and additional versions
+        var taskSequence = new Core.Models.TaskSequence
+        {
+            Name = "Test Sequence",
+            Version = "1.0.0",
+            Steps = new List<TaskSequenceStep> { new TaskSequenceStep { Name = "Step", Type = StepType.SetVariable } }
+        };
+        var saveResult = await _controller.SaveTaskSequence(taskSequence, "Development");
+        var saveOkResult = Assert.IsType<OkObjectResult>(saveResult);
+        var saveValue = saveOkResult.Value;
+        var idProperty = saveValue!.GetType().GetProperty("Id");
+        var baseId = idProperty!.GetValue(saveValue)?.ToString()!;
+
+        // Create a new version
+        await _controller.CreateNewVersion(new CreateVersionRequest { BaseTaskSequenceId = baseId });
+
+        // Get all versions
+        var result = await _controller.GetVersions(baseId);
+        var okResult = Assert.IsType<OkObjectResult>(result);
+        var versions = okResult.Value as IEnumerable<object>;
+        Assert.NotNull(versions);
+        Assert.Equal(2, versions.Count());
+    }
+
+    [Fact]
+    public async Task CommitToProduction_ShouldDeactivateOtherVersions()
+    {
+        // Create and promote first version to production
+        var ts1 = new Core.Models.TaskSequence
+        {
+            Name = "Test Sequence",
+            Version = "1.0.0",
+            Steps = new List<TaskSequenceStep> { new TaskSequenceStep { Name = "Step", Type = StepType.SetVariable } }
+        };
+        var save1Result = await _controller.SaveTaskSequence(ts1, "Development");
+        var save1OkResult = Assert.IsType<OkObjectResult>(save1Result);
+        var save1Value = save1OkResult.Value;
+        var id1Property = save1Value!.GetType().GetProperty("Id");
+        var id1 = id1Property!.GetValue(save1Value)?.ToString()!;
+
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id1, Status = "Production" });
+
+        // Create new version and promote to production
+        var createResult = await _controller.CreateNewVersion(new CreateVersionRequest { BaseTaskSequenceId = id1 });
+        var createOkResult = Assert.IsType<OkObjectResult>(createResult);
+        var createValue = createOkResult.Value;
+        var id2Property = createValue!.GetType().GetProperty("Id");
+        var id2 = id2Property!.GetValue(createValue)?.ToString()!;
+
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Testing" });
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Production" });
+
+        // Verify only the second version is active
+        var version1 = await _dbContext.TaskSequences.FindAsync(id1);
+        var version2 = await _dbContext.TaskSequences.FindAsync(id2);
+        
+        Assert.NotNull(version1);
+        Assert.NotNull(version2);
+        Assert.False(version1.IsActive);
+        Assert.True(version2.IsActive);
+    }
+
+    [Fact]
+    public async Task RollbackToVersion_ShouldActivatePreviousVersion()
+    {
+        // Create two production versions
+        var ts1 = new Core.Models.TaskSequence
+        {
+            Name = "Test Sequence",
+            Version = "1.0.0",
+            Steps = new List<TaskSequenceStep> { new TaskSequenceStep { Name = "Step", Type = StepType.SetVariable } }
+        };
+        var save1Result = await _controller.SaveTaskSequence(ts1, "Development");
+        var save1Value = save1Result as OkObjectResult;
+        var id1 = save1Value!.Value!.GetType().GetProperty("Id")!.GetValue(save1Value.Value)?.ToString()!;
+
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id1, Status = "Production" });
+
+        // Create and promote second version
+        var createResult = await _controller.CreateNewVersion(new CreateVersionRequest { BaseTaskSequenceId = id1 });
+        var createValue = createResult as OkObjectResult;
+        var id2 = createValue!.Value!.GetType().GetProperty("Id")!.GetValue(createValue.Value)?.ToString()!;
+
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Testing" });
+        await _controller.CommitTaskSequence(new CommitRequest { Id = id2, Status = "Production" });
+
+        // Rollback to first version
+        var rollbackResult = await _controller.RollbackToVersion(new RollbackRequest { VersionId = id1 });
+        Assert.IsType<OkObjectResult>(rollbackResult);
+
+        // Verify first version is active again
+        var version1 = await _dbContext.TaskSequences.FindAsync(id1);
+        var version2 = await _dbContext.TaskSequences.FindAsync(id2);
+        
+        Assert.NotNull(version1);
+        Assert.NotNull(version2);
+        Assert.True(version1.IsActive);
+        Assert.False(version2.IsActive);
+    }
 }

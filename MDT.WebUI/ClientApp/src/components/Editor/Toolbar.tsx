@@ -10,6 +10,8 @@ interface ToolbarProps {
   onSave: () => void;
   onValidate: () => void;
   onCommit: (status: TaskSequenceStatus) => void;
+  onCreateVersion: () => void;
+  onViewVersions: () => void;
   currentStatus: TaskSequenceStatus;
   canSave: boolean;
   hasId: boolean;
@@ -28,6 +30,8 @@ const Toolbar: React.FC<ToolbarProps> = ({
   onSave,
   onValidate,
   onCommit,
+  onCreateVersion,
+  onViewVersions,
   currentStatus,
   canSave,
   hasId
@@ -78,6 +82,25 @@ const Toolbar: React.FC<ToolbarProps> = ({
         <div className="status-indicator" style={{ backgroundColor: getStatusColor(currentStatus) }}>
           Status: {currentStatus}
         </div>
+        
+        {hasId && (
+          <>
+            <button 
+              onClick={onCreateVersion} 
+              className="btn btn-secondary"
+              title="Create new version"
+            >
+              📋 New Version
+            </button>
+            <button 
+              onClick={onViewVersions} 
+              className="btn btn-secondary"
+              title="View all versions"
+            >
+              📚 Versions
+            </button>
+          </>
+        )}
         
         {canPromoteTo(TaskSequenceStatus.Testing) && (
           <button 

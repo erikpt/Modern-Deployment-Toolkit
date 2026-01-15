@@ -258,6 +258,9 @@ public class TaskSequenceController : ControllerBase
                     Version = taskSequence.Version,
                     Content = content,
                     Status = status,
+                    BaseTaskSequenceId = string.Empty, // First version has no base
+                    VersionNumber = 1,
+                    IsActive = false,
                     CreatedDate = taskSequence.CreatedDate,
                     ModifiedDate = taskSequence.ModifiedDate
                 };
@@ -310,6 +313,27 @@ public class TaskSequenceController : ControllerBase
             if (parsedStatus < currentStatus)
             {
                 return BadRequest($"Cannot demote task sequence from {entity.Status} to {request.Status}");
+            }
+
+            // If promoting to Production, deactivate other production versions
+            if (request.Status == "Production")
+            {
+                var baseId = string.IsNullOrEmpty(entity.BaseTaskSequenceId) ? entity.Id : entity.BaseTaskSequenceId;
+                
+                var otherProductionVersions = await _dbContext.TaskSequences
+                    .Where(ts => (ts.BaseTaskSequenceId == baseId || ts.Id == baseId) 
+                        && ts.Id != entity.Id 
+                        && ts.Status == "Production" 
+                        && ts.IsActive)
+                    .ToListAsync();
+
+                foreach (var version in otherProductionVersions)
+                {
+                    version.IsActive = false;
+                    version.ModifiedDate = DateTime.UtcNow;
+                }
+
+                entity.IsActive = true;
             }
 
             entity.Status = request.Status;
@@ -388,6 +412,9 @@ public class TaskSequenceController : ControllerBase
                     ts.Description,
                     ts.Version,
                     ts.Status,
+                    ts.BaseTaskSequenceId,
+                    ts.VersionNumber,
+                    ts.IsActive,
                     ts.CreatedDate,
                     ts.ModifiedDate
                 })
@@ -400,6 +427,174 @@ public class TaskSequenceController : ControllerBase
             _logger.LogError(ex, "Failed to list task sequences");
             return BadRequest(ex.Message);
         }
+    }
+
+    [HttpPost("create-version")]
+    public async Task<IActionResult> CreateNewVersion([FromBody] CreateVersionRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.BaseTaskSequenceId))
+            {
+                return BadRequest("Base task sequence ID is required");
+            }
+
+            // Find the base task sequence
+            var baseEntity = await _dbContext.TaskSequences.FindAsync(request.BaseTaskSequenceId);
+            if (baseEntity == null)
+            {
+                return NotFound($"Base task sequence with ID '{request.BaseTaskSequenceId}' not found");
+            }
+
+            // Get the highest version number for this base task sequence
+            var maxVersionNumber = await _dbContext.TaskSequences
+                .Where(ts => ts.BaseTaskSequenceId == baseEntity.BaseTaskSequenceId || ts.Id == request.BaseTaskSequenceId)
+                .MaxAsync(ts => (int?)ts.VersionNumber) ?? baseEntity.VersionNumber;
+
+            var newVersionNumber = maxVersionNumber + 1;
+
+            // Parse the content
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var taskSequence = yamlParser.Parse(baseEntity.Content);
+            
+            // Create new version
+            var newEntity = new TaskSequenceEntity
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = baseEntity.Name,
+                Description = baseEntity.Description,
+                Content = baseEntity.Content,
+                Status = "Development",
+                Version = request.NewVersion ?? IncrementVersion(baseEntity.Version),
+                BaseTaskSequenceId = string.IsNullOrEmpty(baseEntity.BaseTaskSequenceId) ? baseEntity.Id : baseEntity.BaseTaskSequenceId,
+                VersionNumber = newVersionNumber,
+                IsActive = false,
+                CreatedDate = DateTime.UtcNow,
+                ModifiedDate = DateTime.UtcNow
+            };
+
+            _dbContext.TaskSequences.Add(newEntity);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Id = newEntity.Id,
+                Version = newEntity.Version,
+                VersionNumber = newEntity.VersionNumber,
+                Status = newEntity.Status,
+                Message = $"Created new version {newEntity.VersionNumber} (v{newEntity.Version})"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create new version");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("versions/{baseTaskSequenceId}")]
+    public async Task<IActionResult> GetVersions(string baseTaskSequenceId)
+    {
+        try
+        {
+            // Find all versions for this base task sequence
+            var versions = await _dbContext.TaskSequences
+                .Where(ts => ts.BaseTaskSequenceId == baseTaskSequenceId || ts.Id == baseTaskSequenceId)
+                .OrderByDescending(ts => ts.VersionNumber)
+                .Select(ts => new
+                {
+                    ts.Id,
+                    ts.Name,
+                    ts.Version,
+                    ts.VersionNumber,
+                    ts.Status,
+                    ts.IsActive,
+                    ts.Description,
+                    ts.CreatedDate,
+                    ts.ModifiedDate
+                })
+                .ToListAsync();
+
+            return Ok(versions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get versions");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("rollback")]
+    public async Task<IActionResult> RollbackToVersion([FromBody] RollbackRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.VersionId))
+            {
+                return BadRequest("Version ID is required");
+            }
+
+            // Find the version to rollback to
+            var targetVersion = await _dbContext.TaskSequences.FindAsync(request.VersionId);
+            if (targetVersion == null)
+            {
+                return NotFound($"Version with ID '{request.VersionId}' not found");
+            }
+
+            // Must be in production to rollback to
+            if (targetVersion.Status != "Production")
+            {
+                return BadRequest("Can only rollback to a version that was previously in Production");
+            }
+
+            // Get the base task sequence ID
+            var baseId = string.IsNullOrEmpty(targetVersion.BaseTaskSequenceId) ? targetVersion.Id : targetVersion.BaseTaskSequenceId;
+
+            // Deactivate all current production versions
+            var productionVersions = await _dbContext.TaskSequences
+                .Where(ts => (ts.BaseTaskSequenceId == baseId || ts.Id == baseId) && ts.Status == "Production" && ts.IsActive)
+                .ToListAsync();
+
+            foreach (var version in productionVersions)
+            {
+                version.IsActive = false;
+                version.ModifiedDate = DateTime.UtcNow;
+            }
+
+            // Activate the target version
+            targetVersion.IsActive = true;
+            targetVersion.ModifiedDate = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Id = targetVersion.Id,
+                Version = targetVersion.Version,
+                VersionNumber = targetVersion.VersionNumber,
+                Message = $"Rolled back to version {targetVersion.VersionNumber} (v{targetVersion.Version})"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rollback version");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    private string IncrementVersion(string version)
+    {
+        // Simple version increment logic (e.g., 1.0.0 -> 1.1.0)
+        if (Version.TryParse(version, out var v))
+        {
+            return $"{v.Major}.{v.Minor + 1}.{v.Build}";
+        }
+        return version;
     }
 }
 
@@ -415,4 +610,18 @@ public class CommitRequest
     
     [System.ComponentModel.DataAnnotations.Required]
     public string Status { get; set; } = string.Empty;
+}
+
+public class CreateVersionRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public string BaseTaskSequenceId { get; set; } = string.Empty;
+    
+    public string? NewVersion { get; set; }
+}
+
+public class RollbackRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public string VersionId { get; set; } = string.Empty;
 }

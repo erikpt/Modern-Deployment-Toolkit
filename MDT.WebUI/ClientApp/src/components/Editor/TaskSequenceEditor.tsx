@@ -6,6 +6,7 @@ import StepLibrary from './StepLibrary';
 import StepCanvas from './StepCanvas';
 import PropertiesPanel from './PropertiesPanel';
 import VariablesEditor from './VariablesEditor';
+import VersionsModal from './VersionsModal';
 import './TaskSequenceEditor.css';
 
 const TaskSequenceEditor: React.FC = () => {
@@ -24,6 +25,8 @@ const TaskSequenceEditor: React.FC = () => {
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [currentStatus, setCurrentStatus] = useState<TaskSequenceStatus>(TaskSequenceStatus.Development);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showVersionsModal, setShowVersionsModal] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
 
   useEffect(() => {
     loadStepTypes();
@@ -113,6 +116,67 @@ const TaskSequenceEditor: React.FC = () => {
       showMessage('success', result.message);
     } catch (error: any) {
       showMessage('error', `Commit failed: ${error.response?.data || error.message}`);
+    }
+  };
+
+  const handleCreateVersion = async () => {
+    if (!taskSequence.id) {
+      showMessage('error', 'Please save the task sequence before creating a version');
+      return;
+    }
+
+    try {
+      const result = await taskSequenceService.createNewVersion(taskSequence.id);
+      showMessage('success', result.message);
+      // Optionally load the new version
+      const loadResult = await taskSequenceService.loadTaskSequence(result.id);
+      setTaskSequence(loadResult.taskSequence);
+      setCurrentStatus(loadResult.status as TaskSequenceStatus);
+    } catch (error: any) {
+      showMessage('error', `Failed to create version: ${error.response?.data || error.message}`);
+    }
+  };
+
+  const handleViewVersions = async () => {
+    if (!taskSequence.id) {
+      showMessage('error', 'No task sequence loaded');
+      return;
+    }
+
+    try {
+      const versionsList = await taskSequenceService.getVersions(taskSequence.id);
+      setVersions(versionsList);
+      setShowVersionsModal(true);
+    } catch (error: any) {
+      showMessage('error', `Failed to load versions: ${error.response?.data || error.message}`);
+    }
+  };
+
+  const handleLoadVersion = async (versionId: string) => {
+    try {
+      const result = await taskSequenceService.loadTaskSequence(versionId);
+      setTaskSequence(result.taskSequence);
+      setCurrentStatus(result.status as TaskSequenceStatus);
+      setShowVersionsModal(false);
+      showMessage('success', 'Version loaded successfully');
+    } catch (error: any) {
+      showMessage('error', `Failed to load version: ${error.response?.data || error.message}`);
+    }
+  };
+
+  const handleRollback = async (versionId: string) => {
+    if (!confirm('Are you sure you want to rollback to this version? This will make it the active production version.')) {
+      return;
+    }
+
+    try {
+      const result = await taskSequenceService.rollbackToVersion(versionId);
+      showMessage('success', result.message);
+      setShowVersionsModal(false);
+      // Reload the versions list
+      handleViewVersions();
+    } catch (error: any) {
+      showMessage('error', `Rollback failed: ${error.response?.data || error.message}`);
     }
   };
 
@@ -285,6 +349,8 @@ const TaskSequenceEditor: React.FC = () => {
         onSave={handleSave}
         onValidate={handleValidate}
         onCommit={handleCommit}
+        onCreateVersion={handleCreateVersion}
+        onViewVersions={handleViewVersions}
         currentStatus={currentStatus}
         canSave={canSave}
         hasId={!!taskSequence.id}
@@ -305,6 +371,15 @@ const TaskSequenceEditor: React.FC = () => {
           onStepUpdate={handleStepUpdate}
         />
       </div>
+
+      {showVersionsModal && (
+        <VersionsModal
+          versions={versions}
+          onClose={() => setShowVersionsModal(false)}
+          onLoadVersion={handleLoadVersion}
+          onRollback={handleRollback}
+        />
+      )}
     </div>
   );
 };

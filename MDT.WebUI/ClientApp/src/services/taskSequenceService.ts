@@ -67,11 +67,53 @@ export const taskSequenceService = {
     description: string;
     version: string;
     status: string;
+    baseTaskSequenceId: string;
+    versionNumber: number;
+    isActive: boolean;
     createdDate: string;
     modifiedDate: string;
   }>> {
     const url = status ? `/tasksequence/list?status=${status}` : '/tasksequence/list';
     const response = await api.get(url);
+    return response.data;
+  },
+
+  // Create a new version of a task sequence
+  async createNewVersion(baseTaskSequenceId: string, newVersion?: string): Promise<{
+    id: string;
+    version: string;
+    versionNumber: number;
+    status: string;
+    message: string;
+  }> {
+    const response = await api.post('/tasksequence/create-version', { baseTaskSequenceId, newVersion });
+    return response.data;
+  },
+
+  // Get all versions of a task sequence
+  async getVersions(baseTaskSequenceId: string): Promise<Array<{
+    id: string;
+    name: string;
+    version: string;
+    versionNumber: number;
+    status: string;
+    isActive: boolean;
+    description: string;
+    createdDate: string;
+    modifiedDate: string;
+  }>> {
+    const response = await api.get(`/tasksequence/versions/${baseTaskSequenceId}`);
+    return response.data;
+  },
+
+  // Rollback to a previous production version
+  async rollbackToVersion(versionId: string): Promise<{
+    id: string;
+    version: string;
+    versionNumber: number;
+    message: string;
+  }> {
+    const response = await api.post('/tasksequence/rollback', { versionId });
     return response.data;
   }
 };
