@@ -32,6 +32,7 @@ else
 
 builder.Services.AddSingleton<IVariableManager, VariableManager>();
 builder.Services.AddSingleton<IConditionEvaluator, ConditionEvaluator>();
+builder.Services.AddSingleton<StepTypeMetadataService>();
 
 builder.Services.AddTransient<ITaskSequenceParser, XmlTaskSequenceParser>();
 builder.Services.AddTransient<ITaskSequenceParser, JsonTaskSequenceParser>();
@@ -61,6 +62,12 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Add SPA services
+builder.Services.AddSpaStaticFiles(configuration =>
+{
+    configuration.RootPath = "wwwroot";
+});
+
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
@@ -77,7 +84,25 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors();
+
+app.UseStaticFiles();
+app.UseSpaStaticFiles();
+
 app.UseAuthorization();
 app.MapControllers();
+
+// Serve the React SPA
+app.UseSpa(spa =>
+{
+    spa.Options.SourcePath = "ClientApp";
+    
+    // Only proxy in development if explicitly requested
+    // To use: set environment variable USE_SPA_PROXY=true and run npm run dev in ClientApp
+    if (app.Environment.IsDevelopment() && 
+        builder.Configuration.GetValue<bool>("UseSpaProxy", false))
+    {
+        spa.UseProxyToSpaDevelopmentServer("http://localhost:3000");
+    }
+});
 
 app.Run();

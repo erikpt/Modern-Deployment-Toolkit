@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using MDT.Core.Interfaces;
 using MDT.Core.Models;
+using MDT.Core.Services;
+using MDT.Core.Data;
 using MDT.TaskSequence.Parsers;
 using MDT.TaskSequence.Executors;
+using System.Text;
+using Microsoft.EntityFrameworkCore;
 
 namespace MDT.WebUI.Controllers;
 
@@ -13,15 +17,32 @@ public class TaskSequenceController : ControllerBase
     private readonly ILogger<TaskSequenceController> _logger;
     private readonly TaskSequenceEngine _engine;
     private readonly IEnumerable<ITaskSequenceParser> _parsers;
+    private readonly StepTypeMetadataService _stepTypeMetadataService;
+    private readonly MdtDbContext _dbContext;
 
     public TaskSequenceController(
         ILogger<TaskSequenceController> logger,
         TaskSequenceEngine engine,
-        IEnumerable<ITaskSequenceParser> parsers)
+        IEnumerable<ITaskSequenceParser> parsers,
+        StepTypeMetadataService stepTypeMetadataService,
+        MdtDbContext dbContext)
     {
         _logger = logger;
         _engine = engine;
         _parsers = parsers;
+        _stepTypeMetadataService = stepTypeMetadataService;
+        _dbContext = dbContext;
+    }
+
+    private bool ValidateStatus(string status, out TaskSequenceStatus parsedStatus, out string errorMessage)
+    {
+        if (!Enum.TryParse<TaskSequenceStatus>(status, true, out parsedStatus))
+        {
+            errorMessage = $"Invalid status. Must be one of: {string.Join(", ", Enum.GetNames<TaskSequenceStatus>())}";
+            return false;
+        }
+        errorMessage = string.Empty;
+        return true;
     }
 
     [HttpPost("parse")]
@@ -99,9 +120,510 @@ public class TaskSequenceController : ControllerBase
 
         return Ok(new { Valid = true });
     }
+
+    [HttpPost("import")]
+    public async Task<IActionResult> ImportTaskSequence(IFormFile file)
+    {
+        try
+        {
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("No file provided");
+            }
+
+            using var reader = new StreamReader(file.OpenReadStream());
+            var content = await reader.ReadToEndAsync();
+
+            var parser = _parsers.FirstOrDefault(p => p.CanParse(content));
+            if (parser == null)
+            {
+                return BadRequest("Unable to determine task sequence format");
+            }
+
+            var taskSequence = parser.Parse(content);
+            return Ok(taskSequence);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to import task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("export")]
+    public IActionResult ExportTaskSequence([FromBody] Core.Models.TaskSequence taskSequence, [FromQuery] string format = "yaml")
+    {
+        try
+        {
+            ITaskSequenceParser? parser = format.ToLowerInvariant() switch
+            {
+                "yaml" => _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault(),
+                "json" => _parsers.OfType<JsonTaskSequenceParser>().FirstOrDefault(),
+                "xml" => _parsers.OfType<XmlTaskSequenceParser>().FirstOrDefault(),
+                _ => null
+            };
+
+            if (parser == null)
+            {
+                return BadRequest($"Unsupported format: {format}");
+            }
+
+            var serialized = parser.Serialize(taskSequence);
+            var contentType = format.ToLowerInvariant() switch
+            {
+                "yaml" => "text/yaml",
+                "json" => "application/json",
+                "xml" => "application/xml",
+                _ => "text/plain"
+            };
+
+            var extension = format.ToLowerInvariant() switch
+            {
+                "yaml" => "yaml",
+                "json" => "json",
+                "xml" => "xml",
+                _ => "txt"
+            };
+
+            var fileName = $"{taskSequence.Name.Replace(" ", "_")}_{taskSequence.Id}.{extension}";
+            return File(Encoding.UTF8.GetBytes(serialized), contentType, fileName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("step-types")]
+    public IActionResult GetStepTypes()
+    {
+        try
+        {
+            var stepTypes = _stepTypeMetadataService.GetAllStepTypes();
+            return Ok(stepTypes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get step types");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("save")]
+    public async Task<IActionResult> SaveTaskSequence([FromBody] Core.Models.TaskSequence taskSequence, [FromQuery] string status = "Development")
+    {
+        try
+        {
+            // Validate status
+            if (!ValidateStatus(status, out var parsedStatus, out var errorMessage))
+            {
+                return BadRequest(errorMessage);
+            }
+
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var isNew = string.IsNullOrEmpty(taskSequence.Id);
+            if (isNew)
+            {
+                taskSequence.Id = Guid.NewGuid().ToString();
+                taskSequence.CreatedDate = DateTime.UtcNow;
+            }
+
+            taskSequence.ModifiedDate = DateTime.UtcNow;
+
+            var content = yamlParser.Serialize(taskSequence);
+
+            var entity = await _dbContext.TaskSequences.FindAsync(taskSequence.Id);
+            if (entity != null)
+            {
+                entity.Name = taskSequence.Name;
+                entity.Description = taskSequence.Description;
+                entity.Version = taskSequence.Version;
+                entity.Content = content;
+                entity.Status = status;
+                entity.ModifiedDate = taskSequence.ModifiedDate;
+            }
+            else
+            {
+                entity = new TaskSequenceEntity
+                {
+                    Id = taskSequence.Id,
+                    Name = taskSequence.Name,
+                    Description = taskSequence.Description,
+                    Version = taskSequence.Version,
+                    Content = content,
+                    Status = status,
+                    BaseTaskSequenceId = string.Empty, // First version has no base
+                    VersionNumber = 1,
+                    IsActive = false,
+                    CreatedDate = taskSequence.CreatedDate,
+                    ModifiedDate = taskSequence.ModifiedDate
+                };
+                _dbContext.TaskSequences.Add(entity);
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { 
+                Id = taskSequence.Id, 
+                Status = status,
+                Message = $"Task sequence saved successfully to {status}" 
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("commit")]
+    public async Task<IActionResult> CommitTaskSequence([FromBody] CommitRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Id))
+            {
+                return BadRequest("Task sequence ID is required");
+            }
+
+            // Validate status
+            if (!ValidateStatus(request.Status, out var parsedStatus, out var errorMessage))
+            {
+                return BadRequest(errorMessage);
+            }
+
+            var entity = await _dbContext.TaskSequences.FindAsync(request.Id);
+            if (entity == null)
+            {
+                return NotFound($"Task sequence with ID '{request.Id}' not found");
+            }
+
+            // Validate promotion path: Development -> Testing -> Production
+            if (!Enum.TryParse<TaskSequenceStatus>(entity.Status, true, out var currentStatus))
+            {
+                currentStatus = TaskSequenceStatus.Development; // Default to Development if invalid
+            }
+
+            if (parsedStatus < currentStatus)
+            {
+                return BadRequest($"Cannot demote task sequence from {entity.Status} to {request.Status}");
+            }
+
+            // If promoting to Production, deactivate other production versions
+            if (request.Status == "Production")
+            {
+                var baseId = string.IsNullOrEmpty(entity.BaseTaskSequenceId) ? entity.Id : entity.BaseTaskSequenceId;
+                
+                var otherProductionVersions = await _dbContext.TaskSequences
+                    .Where(ts => (ts.BaseTaskSequenceId == baseId || ts.Id == baseId) 
+                        && ts.Id != entity.Id 
+                        && ts.Status == "Production" 
+                        && ts.IsActive)
+                    .ToListAsync();
+
+                foreach (var version in otherProductionVersions)
+                {
+                    version.IsActive = false;
+                    version.ModifiedDate = DateTime.UtcNow;
+                }
+
+                entity.IsActive = true;
+            }
+
+            entity.Status = request.Status;
+            entity.ModifiedDate = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { 
+                Id = entity.Id,
+                PreviousStatus = currentStatus.ToString(),
+                NewStatus = request.Status,
+                Message = $"Task sequence committed to {request.Status}" 
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to commit task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("load/{id}")]
+    public async Task<IActionResult> LoadTaskSequence(string id)
+    {
+        try
+        {
+            var entity = await _dbContext.TaskSequences.FindAsync(id);
+            if (entity == null)
+            {
+                return NotFound($"Task sequence with ID '{id}' not found");
+            }
+
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var taskSequence = yamlParser.Parse(entity.Content);
+            
+            return Ok(new
+            {
+                TaskSequence = taskSequence,
+                Status = entity.Status
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load task sequence");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("list")]
+    public async Task<IActionResult> ListTaskSequences([FromQuery] string? status = null)
+    {
+        try
+        {
+            var query = _dbContext.TaskSequences.AsQueryable();
+
+            if (!string.IsNullOrEmpty(status))
+            {
+                if (!ValidateStatus(status, out _, out var errorMessage))
+                {
+                    return BadRequest(errorMessage);
+                }
+                query = query.Where(ts => ts.Status == status);
+            }
+
+            var taskSequences = await query
+                .OrderByDescending(ts => ts.ModifiedDate)
+                .Select(ts => new
+                {
+                    ts.Id,
+                    ts.Name,
+                    ts.Description,
+                    ts.Version,
+                    ts.Status,
+                    ts.BaseTaskSequenceId,
+                    ts.VersionNumber,
+                    ts.IsActive,
+                    ts.CreatedDate,
+                    ts.ModifiedDate
+                })
+                .ToListAsync();
+
+            return Ok(taskSequences);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to list task sequences");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("create-version")]
+    public async Task<IActionResult> CreateNewVersion([FromBody] CreateVersionRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.BaseTaskSequenceId))
+            {
+                return BadRequest("Base task sequence ID is required");
+            }
+
+            // Find the base task sequence
+            var baseEntity = await _dbContext.TaskSequences.FindAsync(request.BaseTaskSequenceId);
+            if (baseEntity == null)
+            {
+                return NotFound($"Base task sequence with ID '{request.BaseTaskSequenceId}' not found");
+            }
+
+            // Get the highest version number for this base task sequence
+            var baseIdForQuery = string.IsNullOrEmpty(baseEntity.BaseTaskSequenceId) ? baseEntity.Id : baseEntity.BaseTaskSequenceId;
+            var maxVersionNumber = await _dbContext.TaskSequences
+                .Where(ts => (ts.BaseTaskSequenceId == baseIdForQuery && !string.IsNullOrEmpty(ts.BaseTaskSequenceId)) || ts.Id == request.BaseTaskSequenceId)
+                .MaxAsync(ts => (int?)ts.VersionNumber) ?? baseEntity.VersionNumber;
+
+            var newVersionNumber = maxVersionNumber + 1;
+
+            // Parse the content
+            var yamlParser = _parsers.OfType<YamlTaskSequenceParser>().FirstOrDefault();
+            if (yamlParser == null)
+            {
+                return BadRequest("YAML parser not available");
+            }
+
+            var taskSequence = yamlParser.Parse(baseEntity.Content);
+            
+            // Create new version
+            var newEntity = new TaskSequenceEntity
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = baseEntity.Name,
+                Description = baseEntity.Description,
+                Content = baseEntity.Content,
+                Status = "Development",
+                Version = request.NewVersion ?? IncrementVersion(baseEntity.Version),
+                BaseTaskSequenceId = string.IsNullOrEmpty(baseEntity.BaseTaskSequenceId) ? baseEntity.Id : baseEntity.BaseTaskSequenceId,
+                VersionNumber = newVersionNumber,
+                IsActive = false,
+                CreatedDate = DateTime.UtcNow,
+                ModifiedDate = DateTime.UtcNow
+            };
+
+            _dbContext.TaskSequences.Add(newEntity);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Id = newEntity.Id,
+                Version = newEntity.Version,
+                VersionNumber = newEntity.VersionNumber,
+                Status = newEntity.Status,
+                Message = $"Created new version {newEntity.VersionNumber} (v{newEntity.Version})"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create new version");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpGet("versions/{baseTaskSequenceId}")]
+    public async Task<IActionResult> GetVersions(string baseTaskSequenceId)
+    {
+        try
+        {
+            // Find all versions for this base task sequence
+            var versions = await _dbContext.TaskSequences
+                .Where(ts => ts.BaseTaskSequenceId == baseTaskSequenceId || ts.Id == baseTaskSequenceId)
+                .OrderByDescending(ts => ts.VersionNumber)
+                .Select(ts => new
+                {
+                    ts.Id,
+                    ts.Name,
+                    ts.Version,
+                    ts.VersionNumber,
+                    ts.Status,
+                    ts.IsActive,
+                    ts.Description,
+                    ts.CreatedDate,
+                    ts.ModifiedDate
+                })
+                .ToListAsync();
+
+            return Ok(versions);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get versions");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("rollback")]
+    public async Task<IActionResult> RollbackToVersion([FromBody] RollbackRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.VersionId))
+            {
+                return BadRequest("Version ID is required");
+            }
+
+            // Find the version to rollback to
+            var targetVersion = await _dbContext.TaskSequences.FindAsync(request.VersionId);
+            if (targetVersion == null)
+            {
+                return NotFound($"Version with ID '{request.VersionId}' not found");
+            }
+
+            // Must be in production to rollback to
+            if (targetVersion.Status != "Production")
+            {
+                return BadRequest("Can only rollback to a version that was previously in Production");
+            }
+
+            // Get the base task sequence ID
+            var baseId = string.IsNullOrEmpty(targetVersion.BaseTaskSequenceId) ? targetVersion.Id : targetVersion.BaseTaskSequenceId;
+
+            // Deactivate all current production versions
+            var productionVersions = await _dbContext.TaskSequences
+                .Where(ts => (ts.BaseTaskSequenceId == baseId || ts.Id == baseId) && ts.Status == "Production" && ts.IsActive)
+                .ToListAsync();
+
+            foreach (var version in productionVersions)
+            {
+                version.IsActive = false;
+                version.ModifiedDate = DateTime.UtcNow;
+            }
+
+            // Activate the target version
+            targetVersion.IsActive = true;
+            targetVersion.ModifiedDate = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new
+            {
+                Id = targetVersion.Id,
+                Version = targetVersion.Version,
+                VersionNumber = targetVersion.VersionNumber,
+                Message = $"Rolled back to version {targetVersion.VersionNumber} (v{targetVersion.Version})"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to rollback version");
+            return BadRequest(ex.Message);
+        }
+    }
+
+    private string IncrementVersion(string version)
+    {
+        // Simple version increment logic (e.g., 1.0.0 -> 1.1.0)
+        if (Version.TryParse(version, out var v))
+        {
+            var build = v.Build >= 0 ? v.Build : 0;
+            return $"{v.Major}.{v.Minor + 1}.{build}";
+        }
+        return version;
+    }
 }
 
 public class ParseRequest
 {
     public string Content { get; set; } = string.Empty;
+}
+
+public class CommitRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public string Id { get; set; } = string.Empty;
+    
+    [System.ComponentModel.DataAnnotations.Required]
+    public string Status { get; set; } = string.Empty;
+}
+
+public class CreateVersionRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public string BaseTaskSequenceId { get; set; } = string.Empty;
+    
+    public string? NewVersion { get; set; }
+}
+
+public class RollbackRequest
+{
+    [System.ComponentModel.DataAnnotations.Required]
+    public string VersionId { get; set; } = string.Empty;
 }
