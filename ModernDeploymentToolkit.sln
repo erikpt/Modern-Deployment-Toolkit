@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MDT.Engine", "MDT.Engine\MD
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MDT.Tests", "MDT.Tests\MDT.Tests.csproj", "{8668D45B-5482-488D-BF1C-1C9F7222D109}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MDT.BootMediaBuilder", "MDT.BootMediaBuilder\MDT.BootMediaBuilder.csproj", "{19094742-5A7F-45ED-B980-CE7C03218E0E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -97,6 +99,18 @@ Global
 		{8668D45B-5482-488D-BF1C-1C9F7222D109}.Release|x64.Build.0 = Release|Any CPU
 		{8668D45B-5482-488D-BF1C-1C9F7222D109}.Release|x86.ActiveCfg = Release|Any CPU
 		{8668D45B-5482-488D-BF1C-1C9F7222D109}.Release|x86.Build.0 = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|x64.Build.0 = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Debug|x86.Build.0 = Debug|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|x64.ActiveCfg = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|x64.Build.0 = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|x86.ActiveCfg = Release|Any CPU
+		{19094742-5A7F-45ED-B980-CE7C03218E0E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

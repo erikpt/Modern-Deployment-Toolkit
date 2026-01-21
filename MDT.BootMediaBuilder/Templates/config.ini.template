@@ -1,0 +1,13 @@
+[Settings]
+ServerUrl={{SERVER_URL}}
+AutoConnect=true
+LogLevel=Information
+LogPath=X:\MDT\Logs
+
+[Network]
+EnableDHCP=true
+WaitForNetwork=30
+
+[TaskSequence]
+AutoSelectProduction=true
+ShowOnlyProduction=true

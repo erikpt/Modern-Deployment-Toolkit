@@ -19,6 +19,7 @@
     <ProjectReference Include="..\MDT.Core\MDT.Core.csproj" />
     <ProjectReference Include="..\MDT.TaskSequence\MDT.TaskSequence.csproj" />
     <ProjectReference Include="..\MDT.Plugins\MDT.Plugins.csproj" />
+    <ProjectReference Include="..\MDT.BootMediaBuilder\MDT.BootMediaBuilder.csproj" />
   </ItemGroup>
 
 </Project>

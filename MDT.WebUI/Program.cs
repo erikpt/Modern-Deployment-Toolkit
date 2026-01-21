@@ -4,6 +4,8 @@ using MDT.Core.Services;
 using MDT.TaskSequence.Executors;
 using MDT.TaskSequence.Parsers;
 using MDT.Plugins.Steps;
+using MDT.BootMediaBuilder;
+using MDT.BootMediaBuilder.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,6 +53,12 @@ builder.Services.AddTransient<IStepExecutor, FormatAndPartitionExecutor>();
 builder.Services.AddTransient<IStepExecutor, RestartComputerExecutor>();
 
 builder.Services.AddTransient<TaskSequenceEngine>();
+
+// Boot Media Builder services
+builder.Services.Configure<BootMediaBuilderOptions>(
+    builder.Configuration.GetSection("BootMediaBuilder"));
+builder.Services.AddSingleton<IAdkService, AdkService>();
+builder.Services.AddScoped<IBootMediaBuilder, BootMediaBuilderService>();
 
 builder.Services.AddCors(options =>
 {
